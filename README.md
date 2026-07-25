@@ -28,27 +28,23 @@ fiver --stop      # stop server
 | Host | Linux (any distro), macOS, Windows |
 | Engine | scrcpy + adb |
 
----
+## Important: Offline Operation & Beginner Options
 
-## Important: USB debugging (please read)
+### 🌐 100% Offline & Auto-Reconnect
+- **Zero Internet Required:** `fiver` connects directly over your local USB cable or local Wi-Fi router. It never needs an internet connection.
+- **Offline Auto-Reconnect:** If your internet or Wi-Fi network drops, `fiver` continuously attempts background reconnection and immediately restores screen control when network connectivity returns.
 
-Android **does not allow** full screen control of a stock phone without one of:
+### 📱 Phone Authorization & Beginner Options
 
-1. **USB debugging** (or Wireless debugging) — official, stable path used by fiver, or  
-2. A **special app installed on the phone** with screen-capture permission.
+Android security **does not allow** full remote screen control without one of two options:
 
-There is **no reliable, non-glitchy way** to fully control a modern Android
-phone while leaving debugging off and installing nothing. That is an OS
-security rule from Google / OEMs, not something fiver can remove.
+1. **Option A (Built-in / Official - Recommended):** One-time USB debugging / Wireless setup.
+   - Run `fiver --easy` for an interactive beginner wizard.
+   - Enable USB Debugging once on phone -> Tap "Allow" on phone screen -> Wireless or USB control works instantly.
+2. **Option B (Companion App / No Developer Mode):**
+   - If you do not want to enable Developer options, install a local screen streaming app on your phone (e.g. Screen Stream or RustDesk) from Play Store / F-Droid to mirror over local Wi-Fi.
 
-**What fiver does instead:** make the honest path as easy as possible.
-
-- One-time phone setup (Developer options + USB debugging)
-- Then day to day: `fiver --start`, plug in (or Wi-Fi), control, `fiver --stop`
-- After the first “Allow”, fiver can switch to wireless so you can unplug
-- If the phone loses internet and comes back, the server reconnects
-
-If someone claims full control with zero phone setup, treat that as malware.
+If any software claims full control of a stock phone with zero authorization or phone app, treat it as malware.
 
 ---
 
@@ -144,6 +140,8 @@ fiver --stop        # stop everything
 
 | Command | Meaning |
 |---------|---------|
+| `fiver --easy` | Guided setup & auto-connect wizard (beginner-friendly) |
+| `fiver --update` | Check for GitHub release/repo updates & install |
 | `fiver --start` | Start server (background) |
 | `fiver --start --fg` | Start in this terminal |
 | `fiver --stop` | Stop server |
@@ -319,4 +317,9 @@ tail -f ~/.local/state/fiver/fiver.log
 
 - [scrcpy](https://github.com/Genymobile/scrcpy) — mirror and control engine  
 - Android platform-tools — `adb`
-- Xai-org - [Grok build](https://github.com/xai-org/grok-build)
+
+---
+
+## License
+
+[MIT](LICENSE)

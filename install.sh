@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# fiver one-line installer
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/Chintanpatel24/fiver/main/install.sh | bash
+# Or from a local clone:
+#   ./install.sh
 set -euo pipefail
 
 REPO_URL="${FIVER_REPO:-https://github.com/Chintanpatel24/fiver.git}"

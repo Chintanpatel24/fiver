@@ -1,21 +1,49 @@
+import unittest
 from fiver.banner import render
-from fiver.cli import build_parser
+from fiver.cli import build_parser, _merge_command
 
 
-def test_banner_has_name():
-    text = render("9.9.9")
-    assert "FIVER" in text or "██" in text
-    assert "9.9.9" in text
+class TestCLI(unittest.TestCase):
+    def test_banner_has_name(self):
+        text = render("9.9.9")
+        self.assertTrue("FIVER" in text or "██" in text)
+        self.assertIn("9.9.9", text)
+
+    def test_parser_start_flag(self):
+        p = build_parser()
+        args = p.parse_args(["--start", "--fg"])
+        self.assertTrue(args.start)
+        self.assertTrue(args.foreground)
+
+    def test_parser_subcommand(self):
+        p = build_parser()
+        args = p.parse_args(["status"])
+        self.assertEqual(args.command, "status")
+
+    def test_parser_easy_flag(self):
+        p = build_parser()
+        args = p.parse_args(["--easy"])
+        _merge_command(args)
+        self.assertTrue(args.easy)
+
+    def test_parser_easy_subcommand(self):
+        p = build_parser()
+        args = p.parse_args(["easy"])
+        _merge_command(args)
+        self.assertTrue(args.easy)
+
+    def test_parser_update_flag(self):
+        p = build_parser()
+        args = p.parse_args(["--update"])
+        _merge_command(args)
+        self.assertTrue(args.update)
+
+    def test_parser_update_subcommand(self):
+        p = build_parser()
+        args = p.parse_args(["update"])
+        _merge_command(args)
+        self.assertTrue(args.update)
 
 
-def test_parser_start_flag():
-    p = build_parser()
-    args = p.parse_args(["--start", "--fg"])
-    assert args.start is True
-    assert args.foreground is True
-
-
-def test_parser_subcommand():
-    p = build_parser()
-    args = p.parse_args(["status"])
-    assert args.command == "status"
+if __name__ == "__main__":
+    unittest.main()
