@@ -1,0 +1,12 @@
+[Unit]
+Description=fiver Android desk control server
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/fiver --start --fg
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
