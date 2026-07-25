@@ -23,13 +23,11 @@ fiver --start     # start server
 fiver --stop      # stop server
 ```
 
-| | |
+| Engine | scrcpy + adb |
 |---|---|
-| License | MIT |
 | Language | Python 3.9+ |
 | Phone | Android 5.0+ |
 | Host | Linux (any distro), macOS, Windows |
-| Engine | scrcpy + adb |
 
 ## Important: Offline Operation & Beginner Options
 
