@@ -14,9 +14,7 @@
 
 </pre>
 
-# fiver
-
-**fiver** is a simple terminal tool (Python) that runs a local server on your
+- **fiver** is a simple terminal tool (Python) that runs a local server on your
 computer so you can see and control **your** Android phone from the desktop.
 
 ```text
