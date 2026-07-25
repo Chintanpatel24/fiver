@@ -319,9 +319,4 @@ tail -f ~/.local/state/fiver/fiver.log
 
 - [scrcpy](https://github.com/Genymobile/scrcpy) — mirror and control engine  
 - Android platform-tools — `adb`
-
----
-
-## License
-
-[MIT](LICENSE)
+- Xai-org - [Grok build](https://github.com/xai-org/grok-build)
