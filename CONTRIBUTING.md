@@ -5,12 +5,6 @@
 Improvements to reliability, packaging, docs, and UX for consent-based
 Android desk control.
 
-## Not accepted
-
-- Bypassing USB debugging or lock screens
-- Stealth / RAT-style behavior
-- Emojis in CLI output or README (project style)
-
 ## Develop
 
 ```text
