@@ -318,32 +318,31 @@ def cmd_once(cfg) -> int:
         print(f"fiver: {exc}", file=sys.stderr)
         return 1
 
-
 def cmd_setup_wifi(cfg) -> int:
     setup(cfg.log_level, None)
-    print_update_banner()
-    adb = ADB(cfg.adb_path)
-    if not adb.path():
-        print("fiver: adb missing — run: fiver --doctor", file=sys.stderr)
-        return 1
-    
-    print("fiver: starting ADB server...")
-    adb.start_server()
-    print("fiver: waiting for connected phone (USB debugging on)...")
     try:
-        dev = adb.wait_online(timeout=45, poll=1.0, on_pending=lambda m: print(f"fiver: {m}"))
-        print(f"fiver: phone found ({dev.serial}). Enabling wireless mode on port {cfg.adb_port}...")
-        target = adb.enable_wireless(dev.serial, cfg.adb_port, cfg.phone_ip)
-        ensure_dirs()
-        from .paths import last_wireless_path
+        from .tui import run_tui
+        from .scrcpy import Scrcpy
+        from .adb import ADB, ADBError
+        import sys
 
-        last_wireless_path().write_text(target + "\n", encoding="utf-8")
-        print(f"\n✅ fiver: Wireless ADB successfully connected to {target}")
-        print("fiver: You can now unplug the USB cable!")
-        print("fiver: Start background server with: fiver --start")
+        target_serial = run_tui(cfg)
+        if target_serial:
+            adb = ADB(cfg.adb_path)
+            scrcpy = Scrcpy(cfg.scrcpy_path)
+            print(f"\nfiver: Connected to {target_serial}. Waiting for phone authorization...")
+            try:
+                # Wait for the device to transition from unauthorized to device
+                dev = adb.wait_online(timeout=30.0, poll=1.0)
+                print(f"fiver: Phone authorized ({dev.serial})! Launching scrcpy...")
+                return scrcpy.run_session(cfg, dev.serial)
+            except ADBError as e:
+                print(f"\n❌ fiver wireless setup failed: {e}", file=sys.stderr)
+                return 1
         return 0
-    except ADBError as exc:
-        print(f"\n❌ fiver wireless setup failed: {exc}", file=sys.stderr)
+    except ImportError as e:
+        import sys
+        print(f"fiver: Failed to load TUI. Please install required dependencies: pip install textual zeroconf\nError: {e}", file=sys.stderr)
         return 1
 
 
