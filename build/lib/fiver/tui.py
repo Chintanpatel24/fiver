@@ -6,10 +6,12 @@ import ipaddress
 import re
 import socket
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import List, Optional
 
+from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
@@ -111,7 +113,7 @@ def scan_devices() -> List[NetworkDevice]:
 
 
 def _nmap_scan(subnet, local_ip):
-    """Try nmap host discovery (fastest and most reliable)."""
+    """Try nmap host discovery."""
     try:
         out = subprocess.run(
             ["nmap", "-sn", "-T4", subnet],
@@ -139,7 +141,7 @@ def _nmap_scan(subnet, local_ip):
 
 
 def _arp_scan_tool(local_ip):
-    """Try arp-scan (needs root usually, but worth trying)."""
+    """Try arp-scan tool."""
     try:
         out = subprocess.run(
             ["arp-scan", "-l", "-q"],
@@ -190,7 +192,6 @@ def _ping_sweep(subnet, local_ip):
             if state not in ("REACHABLE", "STALE", "DELAY"):
                 continue
             ip = parts[0]
-            # Skip IPv6 and self
             if ":" in ip and "." not in ip:
                 continue
             if ip == local_ip:
@@ -217,12 +218,12 @@ def _resolve(ip):
 def _bars(sig):
     """Signal-strength bar characters."""
     if sig >= 75:
-        return "▰▰▰▰"
+        return "[||||]"
     if sig >= 50:
-        return "▰▰▰▱"
+        return "[||| ]"
     if sig >= 25:
-        return "▰▰▱▱"
-    return "▰▱▱▱"
+        return "[||  ]"
+    return "[|   ]"
 
 
 # ── TUI list items ───────────────────────────────────────────
@@ -237,13 +238,18 @@ class WifiItem(ListItem):
 
     def compose(self):
         n = self.net
-        mark = "✦" if n.in_use else " "
-        lock = "🔒" if n.security not in ("", "--", "Open") else "🔓"
+        mark = "[ACTIVE]" if n.in_use else "[      ]"
+        lock = "[SECURE]" if n.security not in ("", "--", "Open") else "[OPEN]  "
         yield Label(
-            " {}  {:<26} {} {:>3}%  {} {}".format(
+            " {}  {:<24} {} {:>3}%  {} {}".format(
                 mark, n.ssid, _bars(n.signal), n.signal, lock, n.security,
             )
         )
+
+    def on_click(self) -> None:
+        """Instant single-click selection for Wi-Fi network."""
+        if hasattr(self, 'app') and isinstance(self.app, FiverSetupTUI):
+            self.app._go_devices(self.net)
 
 
 class DeviceItem(ListItem):
@@ -256,11 +262,16 @@ class DeviceItem(ListItem):
     def compose(self):
         d = self.dev
         yield Label(
-            "   📱  {:<18}{:<26}{}".format(d.ip, d.hostname, d.mac)
+            "   [DEVICE]  {:<18}{:<24}{}".format(d.ip, d.hostname, d.mac)
         )
 
+    def on_click(self) -> None:
+        """Instant single-click selection for network device."""
+        if hasattr(self, 'app') and isinstance(self.app, FiverSetupTUI):
+            self.app._send(self.dev)
 
-# ── Main TUI application ────────────────────────────────────
+
+# ── Main TUI application (Matte Black Theme) ─────────────────
 
 
 class FiverSetupTUI(App):
@@ -271,37 +282,36 @@ class FiverSetupTUI(App):
 
     CSS = """
 Screen {
-    background: #0f1117;
+    background: #000000;
 }
 
 #banner {
     dock: top;
     height: 3;
     padding: 1 2;
-    background: #1a1b26;
-    color: #7aa2f7;
-    text-style: bold;
+    background: #0a0a0a;
+    color: #ffffff;
+    border-bottom: solid #222222;
 }
 
 #hint {
     padding: 0 2;
-    color: #565f89;
+    color: #888888;
     height: 2;
 }
 
 #phase {
     padding: 0 2;
-    color: #9ece6a;
-    text-style: bold;
+    color: #ffffff;
     height: 2;
 }
 
 #wifi-lv, #dev-lv {
     margin: 0 2;
-    border: round #3b4261;
+    border: solid #222222;
     padding: 0 1;
     height: 1fr;
-    background: #1a1b26;
+    background: #050505;
 }
 
 .hidden {
@@ -313,19 +323,24 @@ Screen {
     height: 3;
     padding: 0 2;
     layout: horizontal;
-    background: #1a1b26;
+    background: #0a0a0a;
+    border-top: solid #222222;
 }
 
 #bar Button {
     margin: 0 1;
+    background: #111111;
+    color: #ffffff;
+    border: solid #333333;
 }
 
 #status {
     dock: bottom;
-    height: 2;
+    height: auto;
+    max-height: 25;
     padding: 0 2;
-    background: #1a1b26;
-    color: #e0af68;
+    background: #000000;
+    color: #aaaaaa;
 }
 
 WifiItem {
@@ -337,11 +352,11 @@ DeviceItem {
 }
 
 WifiItem:hover, DeviceItem:hover {
-    background: #292e42;
+    background: #151515;
 }
 
 ListView:focus > ListItem.--highlight {
-    background: #3b4261;
+    background: #222222;
 }
 """
 
@@ -357,6 +372,7 @@ ListView:focus > ListItem.--highlight {
         self.adb = ADB(cfg.adb_path)
         self._phase = "wifi"
         self._net = None  # type: Optional[WifiNetwork]
+        self.web_server = None
 
     def compose(self):
         yield Header(show_clock=True)
@@ -366,9 +382,9 @@ ListView:focus > ListItem.--highlight {
         yield ListView(id="wifi-lv")
         yield ListView(id="dev-lv", classes="hidden")
         with Horizontal(id="bar", classes="hidden"):
-            yield Button("⬅ Back", id="b-back")
-            yield Button("🔄 Refresh", id="b-ref", variant="primary")
-            yield Button("📡 Send Request", id="b-send", variant="success")
+            yield Button("Back", id="b-back")
+            yield Button("Refresh", id="b-ref")
+            yield Button("Send Request", id="b-send")
         yield Static("", id="status")
         yield Footer()
 
@@ -378,16 +394,22 @@ ListView:focus > ListItem.--highlight {
         self.adb.start_server()
         self._go_wifi()
 
+    def on_unmount(self) -> None:
+        """Clean shutdown on exit: stop servers and terminate Cloudflare tunnels."""
+        if self.web_server:
+            self.web_server.stop()
+            self.web_server = None
+
     # ── phase: Wi-Fi list ─────────────────────────────────────
 
     def _go_wifi(self):
         self._phase = "wifi"
-        self._update_status("Scanning Wi-Fi networks…")
-        self.query_one("#banner", Static).update("📶  FIVER — Wi-Fi Setup")
+        self._update_status("Scanning Wi-Fi networks...")
+        self.query_one("#banner", Static).update("FIVER - WI-FI SETUP")
         self.query_one("#hint", Label).update(
-            "Select your Wi-Fi network to scan for devices.  ✦ = connected"
+            "Click or press Enter on your Wi-Fi network to scan for devices."
         )
-        self.query_one("#phase", Label).update("Scanning…")
+        self.query_one("#phase", Label).update("Scanning...")
         self.query_one("#wifi-lv").remove_class("hidden")
         self.query_one("#dev-lv").add_class("hidden")
         self.query_one("#bar").add_class("hidden")
@@ -406,7 +428,7 @@ ListView:focus > ListItem.--highlight {
             "Wi-Fi Networks ({})".format(len(nets))
         )
         self._update_status(
-            "  {} networks found — select one and press Enter ↵".format(len(nets))
+            "  {} networks found - click or press Enter to select".format(len(nets))
         )
 
     # ── phase: device list ────────────────────────────────────
@@ -415,16 +437,16 @@ ListView:focus > ListItem.--highlight {
         self._phase = "devices"
         self._net = net
         self.query_one("#banner", Static).update(
-            '📱  Devices on "{}"'.format(net.ssid)
+            'Devices on "{}"'.format(net.ssid)
         )
         self.query_one("#hint", Label).update(
-            "Select a device → press Enter or click Send Request"
+            "Click a device to send screen share request."
         )
-        self.query_one("#phase", Label).update("Scanning network…")
+        self.query_one("#phase", Label).update("Scanning network...")
         self.query_one("#wifi-lv").add_class("hidden")
         self.query_one("#dev-lv").remove_class("hidden")
         self.query_one("#bar").remove_class("hidden")
-        self._update_status("  Scanning… this may take a moment")
+        self._update_status("  Scanning... this may take a moment")
         self.run_worker(self._load_devs, thread=True)
 
     def _load_devs(self):
@@ -441,12 +463,13 @@ ListView:focus > ListItem.--highlight {
             'Devices on "{}" ({})'.format(name, len(devs))
         )
         self._update_status(
-            "  {} devices — select one → Send Request".format(len(devs))
+            "  {} devices found - click one or press Send Request".format(len(devs))
         )
 
     # ── events ────────────────────────────────────────────────
 
-    def on_list_view_selected(self, ev):
+    @on(ListView.Selected)
+    def on_list_view_selected(self, ev: ListView.Selected):
         if self._phase == "wifi" and isinstance(ev.item, WifiItem):
             self._go_devices(ev.item.net)
         elif self._phase == "devices" and isinstance(ev.item, DeviceItem):
@@ -464,10 +487,10 @@ ListView:focus > ListItem.--highlight {
             if isinstance(ch, DeviceItem):
                 self._send(ch.dev)
             else:
-                self._update_status("  ⚠ Select a device first")
+                self._update_status("  [WARNING] Select a device first")
 
     def _send(self, dev):
-        self._update_status("  📡 Sending request to {}…".format(dev.ip))
+        self._update_status("  [CONNECTING] Sending request to {}...".format(dev.ip))
         self.run_worker(lambda: self._try_connect(dev), thread=True)
 
     def _try_connect(self, dev):
@@ -476,19 +499,74 @@ ListView:focus > ListItem.--highlight {
             tgt = "{}:{}".format(dev.ip, port)
             self.call_from_thread(
                 self._update_status,
-                "  📡 Trying {}… Accept prompt on phone".format(tgt),
+                "  [ADB CHECK] Checking ADB on {}...".format(tgt),
             )
             try:
-                if self.adb.connect(tgt, timeout=6.0):
+                if self.adb.connect(tgt, timeout=3.0):
                     self.call_from_thread(self.exit, tgt)
                     return
             except ADBError:
                 continue
+
+        # Non-developer phone mode fallback (No USB debugging / no dev options needed)
         self.call_from_thread(
             self._update_status,
-            "  ❌ {} did not respond. Enable Wireless Debugging on phone "
-            "(Settings → Developer → Wireless Debugging).".format(dev.ip),
+            "  [WEB MODE] ADB unavailable on {} - Starting Web Server & Cloudflare HTTPS Tunnel...".format(dev.ip),
         )
+
+        from .web_mirror import WebMirrorServer, generate_ascii_qr, MirrorHandler
+
+        local_ip, _ = _local_subnet()
+        local_ip = local_ip or "127.0.0.1"
+
+        if self.web_server:
+            self.web_server.stop()
+
+        self.web_server = WebMirrorServer(port=8080)
+        self.web_server.start()
+
+        self.call_from_thread(
+            self._update_status,
+            "  [CLOUDFLARE TUNNEL] Deploying secure HTTPS tunnel...",
+        )
+
+        public_url = self.web_server.start_cloudflare_tunnel()
+        proto = "https" if self.web_server.is_ssl else "http"
+        phone_url = public_url or f"{proto}://{local_ip}:{self.web_server.port}"
+
+        qr_box = generate_ascii_qr(phone_url)
+
+        # Open desktop viewer immediately so it's ready on PC
+        self.web_server.open_desktop_viewer(local_ip)
+
+        self.call_from_thread(
+            self._show_web_request,
+            dev,
+            phone_url,
+            qr_box,
+        )
+
+        # Poll until phone accepts or declines
+        while not MirrorHandler.accepted and not MirrorHandler.declined:
+            time.sleep(0.5)
+
+        if MirrorHandler.accepted:
+            self.call_from_thread(
+                self._update_status,
+                "  [SUCCESS] Request accepted! Live mobile screen stream is active on desktop.",
+            )
+        else:
+            self.call_from_thread(
+                self._update_status,
+                "  [DECLINED] Request declined by phone user.",
+            )
+
+    def _show_web_request(self, dev, url: str, qr_box: str):
+        self.query_one("#banner", Static).update("NON-DEVELOPER PHONE REQUEST SENT")
+        self.query_one("#hint", Label).update(f"Request sent to {dev.ip}! Open link on phone: {url}")
+        self.query_one("#phase", Label).update("Waiting for phone user to tap ACCEPT...")
+        self.query_one("#dev-lv").add_class("hidden")
+        self.query_one("#status", Static).update(qr_box)
 
     # ── helpers ───────────────────────────────────────────────
 
