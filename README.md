@@ -1,20 +1,17 @@
-<pre align=center>
+```
+  ███████╗██╗██╗   ██╗███████╗██████╗
+  ██╔════╝██║██║   ██║██╔════╝██╔══██╗
+  █████╗  ██║██║   ██║█████╗  ██████╔╝
+  ██╔══╝  ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗
+  ██║     ██║ ╚████╔╝ ███████╗██║  ██║
+  ╚═╝     ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝
 
-      ___                                  ___           ___     
-     /  /\      ___           ___         /  /\         /  /\    
-    /  /:/_    /  /\         /__/\       /  /:/_       /  /::\   
-   /  /:/ /\  /  /:/         \  \:\     /  /:/ /\     /  /:/\:\  
-  /  /:/ /:/ /__/::\          \  \:\   /  /:/ /:/_   /  /:/~/:/  
- /__/:/ /:/  \__\/\:\__   ___  \__\:\ /__/:/ /:/ /\ /__/:/ /:/___
- \  \:\/:/      \  \:\/\ /__/\ |  |:| \  \:\/:/ /:/ \  \:\/:::::/
-  \  \::/        \__\::/ \  \:\|  |:|  \  \::/ /:/   \  \::/~~~~ 
-   \  \:\        /__/:/   \  \:\__|:|   \  \:\/:/     \  \:\     
-    \  \:\       \__\/     \__\::::/     \  \::/       \  \:\    
-     \__\/                     ~~~~       \__\/         \__\/    
+  android desk control  |  local server  |  your device
+```
 
-</pre>
+# fiver
 
-- **fiver** is a simple terminal tool (Python) that runs a local server on your
+**fiver** is a simple terminal tool (Python) that runs a local server on your
 computer so you can see and control **your** Android phone from the desktop.
 
 ```text
@@ -23,19 +20,21 @@ fiver --start     # start server
 fiver --stop      # stop server
 ```
 
-| Engine | scrcpy + adb |
+| | |
 |---|---|
+| License | MIT |
 | Language | Python 3.9+ |
 | Phone | Android 5.0+ |
 | Host | Linux (any distro), macOS, Windows |
+| Engine | scrcpy + adb |
 
 ## Important: Offline Operation & Beginner Options
 
-### Offline & Auto-Reconnect
+### 🌐 100% Offline & Auto-Reconnect
 - **Zero Internet Required:** `fiver` connects directly over your local USB cable or local Wi-Fi router. It never needs an internet connection.
 - **Offline Auto-Reconnect:** If your internet or Wi-Fi network drops, `fiver` continuously attempts background reconnection and immediately restores screen control when network connectivity returns.
 
-### Phone Authorization & Beginner Options
+### 📱 Phone Authorization & Beginner Options
 
 Android security **does not allow** full remote screen control without one of two options:
 
@@ -48,8 +47,6 @@ Android security **does not allow** full remote screen control without one of tw
 If any software claims full control of a stock phone with zero authorization or phone app, treat it as malware.
 
 ---
-
-<img width="1308" height="759" alt="Blur_fiver" src="https://github.com/user-attachments/assets/4328f0a7-72a0-4d76-ad29-635caaa442af" />
 
 ## What you need
 
