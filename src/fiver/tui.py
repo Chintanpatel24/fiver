@@ -508,35 +508,58 @@ ListView:focus > ListItem.--highlight {
             except ADBError:
                 continue
 
-        # Non-developer phone mode fallback (No USB debugging / no dev options needed)
+        # Non-developer phone fallback — build companion APK and serve it
         self.call_from_thread(
             self._update_status,
-            "  [WEB MODE] ADB unavailable on {} - Starting Web Server & Cloudflare HTTPS Tunnel...".format(dev.ip),
+            "  [COMPANION MODE] ADB unavailable — building companion app...",
         )
 
         from .web_mirror import WebMirrorServer, generate_ascii_qr, MirrorHandler
+        from .apk_builder import APKBuilder
 
         local_ip, _ = _local_subnet()
         local_ip = local_ip or "127.0.0.1"
 
+        # Start web server first to get the port
         if self.web_server:
             self.web_server.stop()
 
         self.web_server = WebMirrorServer(port=8080)
-        self.web_server.start()
+        server_addr = self.web_server.start()
 
+        # Build companion APK with server address embedded
+        server_url = f"http://{local_ip}:{self.web_server.port}"
+        try:
+            self.call_from_thread(
+                self._update_status,
+                "  [BUILDING APK] Compiling companion app (first time may take a moment)...",
+            )
+            builder = APKBuilder()
+            apk_path = builder.build_apk(server_url)
+            self.web_server.set_apk(apk_path)
+            self.call_from_thread(
+                self._update_status,
+                "  [APK READY] Companion app built successfully.",
+            )
+        except RuntimeError as e:
+            self.call_from_thread(
+                self._update_status,
+                f"  [ERROR] Failed to build companion app: {e}",
+            )
+            return
+
+        # Start Cloudflare tunnel for QR code access
         self.call_from_thread(
             self._update_status,
             "  [CLOUDFLARE TUNNEL] Deploying secure HTTPS tunnel...",
         )
 
         public_url = self.web_server.start_cloudflare_tunnel()
-        proto = "https" if self.web_server.is_ssl else "http"
-        phone_url = public_url or f"{proto}://{local_ip}:{self.web_server.port}"
+        phone_url = public_url or server_url
 
         qr_box = generate_ascii_qr(phone_url)
 
-        # Open desktop viewer immediately so it's ready on PC
+        # Open desktop viewer
         self.web_server.open_desktop_viewer(local_ip)
 
         self.call_from_thread(
@@ -546,14 +569,14 @@ ListView:focus > ListItem.--highlight {
             qr_box,
         )
 
-        # Poll until phone accepts or declines
+        # Poll until phone starts streaming or user exits
         while not MirrorHandler.accepted and not MirrorHandler.declined:
             time.sleep(0.5)
 
         if MirrorHandler.accepted:
             self.call_from_thread(
                 self._update_status,
-                "  [SUCCESS] Request accepted! Live mobile screen stream is active on desktop.",
+                "  [SUCCESS] Companion app connected! Live screen stream active.",
             )
         else:
             self.call_from_thread(
@@ -562,9 +585,9 @@ ListView:focus > ListItem.--highlight {
             )
 
     def _show_web_request(self, dev, url: str, qr_box: str):
-        self.query_one("#banner", Static).update("NON-DEVELOPER PHONE REQUEST SENT")
-        self.query_one("#hint", Label).update(f"Request sent to {dev.ip}! Open link on phone: {url}")
-        self.query_one("#phase", Label).update("Waiting for phone user to tap ACCEPT...")
+        self.query_one("#banner", Static).update("COMPANION APP")
+        self.query_one("#hint", Label).update(f"Scan QR code to download companion app for {dev.ip}!")
+        self.query_one("#phase", Label).update("Waiting for phone user to install and open app...")
         self.query_one("#dev-lv").add_class("hidden")
         self.query_one("#status", Static).update(qr_box)
 

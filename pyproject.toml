@@ -36,4 +36,4 @@ Issues = "https://github.com/Chintanpatel24/fiver/issues"
 where = ["src"]
 
 [tool.setuptools.package-data]
-fiver = ["py.typed"]
+fiver = ["py.typed", "companion/*.xml", "companion/*.java"]
