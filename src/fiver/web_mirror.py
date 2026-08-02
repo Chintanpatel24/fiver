@@ -98,7 +98,7 @@ MANIFEST_JSON = json.dumps({
 })
 
 
-# HTML template for the phone (Matte Black Theme, Instant Tap Permission)
+# HTML template for the phone (Matte Black Theme, Companion App Download)
 PHONE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -134,10 +134,11 @@ PHONE_HTML = """<!DOCTYPE html>
         }
         h1 { font-size: 20px; margin-bottom: 12px; color: #ffffff; text-transform: uppercase; letter-spacing: 1px; }
         p { font-size: 14px; color: #888888; margin-bottom: 24px; line-height: 1.5; }
-        .btn-group { display: flex; gap: 12px; flex-direction: column; }
         button {
             width: 100%;
             padding: 16px;
+            background: #ffffff;
+            color: #000000;
             border: 1px solid #333333;
             font-family: monospace;
             font-size: 15px;
@@ -145,129 +146,22 @@ PHONE_HTML = """<!DOCTYPE html>
             cursor: pointer;
             text-transform: uppercase;
         }
-        .btn-accept { background: #ffffff; color: #000000; }
-        .btn-accept:hover { background: #cccccc; }
-        .btn-decline { background: #1a1a1a; color: #ffffff; margin-top: 8px; }
-        .btn-decline:hover { background: #333333; }
-        .status {
+        button:hover { background: #cccccc; }
+        .server-url {
             margin-top: 20px;
-            font-size: 13px;
-            color: #aaaaaa;
-            line-height: 1.4;
+            font-size: 12px;
+            color: #555555;
+            word-break: break-all;
         }
-        #video, #canvas { display: none; }
     </style>
 </head>
 <body>
-    <div class="card" id="card">
-        <h1>Desktop Screen Request</h1>
-        <p id="desc">TAP ANYWHERE TO SHARE SCREEN.<br><br>Your computer will view your phone screen in real time.</p>
-        <div class="btn-group" id="btnGroup">
-            <button class="btn-accept" id="startBtn">TAP TO ALLOW SCREEN SHARE</button>
-            <button class="btn-decline" id="declineBtn">DECLINE</button>
-        </div>
-        <div class="status" id="statusMsg">[READY] Tap screen to start.</div>
+    <div class="card">
+        <h1>FIVER COMPANION</h1>
+        <p>Download the companion app, install it, and open it to start screen sharing.</p>
+        <button onclick="window.location.href='/download/companion.apk'">DOWNLOAD &amp; INSTALL</button>
+        <div class="server-url">Server: {{LOCAL_SERVER_URL}}</div>
     </div>
-
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas"></canvas>
-
-    <script>
-        const startBtn = document.getElementById('startBtn');
-        const declineBtn = document.getElementById('declineBtn');
-        const statusMsg = document.getElementById('statusMsg');
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-
-        let isStreaming = false;
-
-        declineBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            fetch('/api/decline', { method: 'POST' });
-            document.getElementById('card').innerHTML = '<h1>Request Declined</h1><p>You declined the screen sharing request.</p>';
-        });
-
-        // Trigger permission on touch/click
-        function handleTap(e) {
-            if (isStreaming) return;
-            requestScreenCapture();
-        }
-
-        document.body.addEventListener('click', handleTap);
-        document.body.addEventListener('touchstart', handleTap);
-
-        function requestScreenCapture() {
-            if (isStreaming) return;
-            statusMsg.textContent = 'Requesting screen permission...';
-            
-            if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-                navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        cursor: "always",
-                        displaySurface: "monitor",
-                        frameRate: { ideal: 30, max: 60 }
-                    }
-                }).then(stream => {
-                    handleStream(stream);
-                }).catch(err => {
-                    console.error(err);
-                    statusMsg.innerHTML = '[PERMISSION REQUIRED]<br>Tap screen again and select <b>"Start Now"</b> when prompted.';
-                    startBtn.textContent = 'RETRY ALLOW SCREEN SHARE';
-                });
-            } else {
-                statusMsg.innerHTML = '[HTTPS REQUIRED]<br>Screen sharing requires an HTTPS link.<br>Opening HTTPS Cloudflare link...';
-            }
-        }
-
-        function handleStream(stream) {
-            video.srcObject = stream;
-            statusMsg.textContent = '[ACTIVE] Screen sharing live to desktop...';
-            document.getElementById('btnGroup').style.display = 'none';
-
-            video.onloadedmetadata = () => {
-                canvas.width = video.videoWidth || 720;
-                canvas.height = video.videoHeight || 1280;
-                isStreaming = true;
-                sendFrames();
-            };
-
-            stream.getVideoTracks()[0].onended = () => {
-                isStreaming = false;
-                statusMsg.textContent = '[STOPPED] Screen sharing ended.';
-                document.getElementById('btnGroup').style.display = 'block';
-                startBtn.textContent = 'RESTART SCREEN SHARE';
-            };
-        }
-
-        async function sendFrames() {
-            if (!isStreaming) return;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-            
-            try {
-                await fetch('/api/frame', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: dataUrl
-                });
-            } catch (e) {}
-
-            setTimeout(sendFrames, 40); // ~25 FPS
-        }
-
-        // Heartbeat status poll
-        setInterval(async () => {
-            if (isStreaming) return;
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-                if (data.request && !isStreaming) {
-                    statusMsg.textContent = '[REQUEST] Desktop server ready. Tap screen to share.';
-                }
-            } catch (e) {}
-        }, 2000);
-    </script>
 </body>
 </html>
 """
@@ -329,6 +223,7 @@ class MirrorHandler(BaseHTTPRequestHandler):
     accepted = False
     declined = False
     requested = True
+    apk_path = None
 
     def log_message(self, format, *args):
         pass  # Suppress HTTP server stdout logs
@@ -338,7 +233,10 @@ class MirrorHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(PHONE_HTML.encode("utf-8"))
+            host = self.headers.get("Host", "localhost")
+            proto = "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
+            html = PHONE_HTML.replace("{{LOCAL_SERVER_URL}}", f"{proto}://{host}")
+            self.wfile.write(html.encode("utf-8"))
         elif self.path == "/manifest.json":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -350,6 +248,18 @@ class MirrorHandler(BaseHTTPRequestHandler):
             self.end_headers()
             res = json.dumps({"request": MirrorHandler.requested, "accepted": MirrorHandler.accepted})
             self.wfile.write(res.encode("utf-8"))
+        elif self.path == "/download/companion.apk":
+            if MirrorHandler.apk_path and os.path.exists(MirrorHandler.apk_path):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.android.package-archive")
+                self.send_header("Content-Disposition", 'attachment; filename="companion.apk"')
+                with open(MirrorHandler.apk_path, "rb") as f:
+                    apk_data = f.read()
+                self.send_header("Content-Length", str(len(apk_data)))
+                self.end_headers()
+                self.wfile.write(apk_data)
+            else:
+                self.send_error(404)
         elif self.path == "/desktop":
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -378,17 +288,25 @@ class MirrorHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/frame":
             content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length).decode("utf-8")
-            if "," in body:
-                body = body.split(",", 1)[1]
-            try:
-                MirrorHandler.latest_frame = base64.b64decode(body)
+            content_type = self.headers.get("Content-Type", "")
+            if content_type == "image/jpeg":
+                MirrorHandler.latest_frame = self.rfile.read(content_length)
                 MirrorHandler.accepted = True
                 MirrorHandler.frame_event.set()
                 self.send_response(200)
                 self.end_headers()
-            except Exception:
-                self.send_error(400)
+            else:
+                body = self.rfile.read(content_length).decode("utf-8")
+                if "," in body:
+                    body = body.split(",", 1)[1]
+                try:
+                    MirrorHandler.latest_frame = base64.b64decode(body)
+                    MirrorHandler.accepted = True
+                    MirrorHandler.frame_event.set()
+                    self.send_response(200)
+                    self.end_headers()
+                except Exception:
+                    self.send_error(400)
         elif self.path == "/api/decline":
             MirrorHandler.declined = True
             self.send_response(200)
@@ -407,6 +325,9 @@ class WebMirrorServer:
         self.public_url: Optional[str] = None
         self.desktop_opened = False
         self.is_ssl = False
+
+    def set_apk(self, path: str):
+        MirrorHandler.apk_path = path
 
     def start(self) -> str:
         # Reset state flags
