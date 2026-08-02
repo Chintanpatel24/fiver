@@ -25,7 +25,7 @@ if [[ -d "$SCRIPT_DIR/.git" ]]; then
   git pull origin main || warn "git pull failed; continuing with install"
   if command -v pipx >/dev/null 2>&1; then
     info "Reinstalling package with pipx..."
-    pipx install --force .
+    UV_VENV_CLEAR=1 pipx install --force .
   else
     info "Reinstalling package in user environment..."
     python3 -m pip install --upgrade --user .
@@ -34,7 +34,7 @@ else
   # Running from standalone install
   if command -v pipx >/dev/null 2>&1; then
     info "Upgrading fiver via pipx..."
-    pipx install --force "git+${REPO_URL}@${REF}"
+    UV_VENV_CLEAR=1 pipx install --force "git+${REPO_URL}@${REF}"
   else
     info "Upgrading fiver via pip/venv..."
     python3 -m pip install --upgrade --user "git+${REPO_URL}@${REF}"

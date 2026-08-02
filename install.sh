@@ -34,9 +34,9 @@ install_fiver() {
   if command -v pipx >/dev/null 2>&1; then
     info "Installing with pipx..."
     if [[ -f pyproject.toml ]]; then
-      pipx install --force .
+      UV_VENV_CLEAR=1 pipx install --force .
     else
-      pipx install --force "git+${REPO_URL}@${REF}"
+      UV_VENV_CLEAR=1 pipx install --force "git+${REPO_URL}@${REF}"
     fi
     return 0
   fi
