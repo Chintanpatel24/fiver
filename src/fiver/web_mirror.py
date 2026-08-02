@@ -268,17 +268,21 @@ class MirrorHandler(BaseHTTPRequestHandler):
         elif self.path == "/stream.mjpeg":
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-cache, private")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Connection", "close")
             self.end_headers()
             try:
                 while True:
                     MirrorHandler.frame_event.wait(timeout=1.0)
                     MirrorHandler.frame_event.clear()
-                    if MirrorHandler.latest_frame:
+                    frame = MirrorHandler.latest_frame
+                    if frame:
                         self.wfile.write(b"--frame\r\n")
                         self.send_header("Content-Type", "image/jpeg")
-                        self.send_header("Content-Length", str(len(MirrorHandler.latest_frame)))
+                        self.send_header("Content-Length", str(len(frame)))
                         self.end_headers()
-                        self.wfile.write(MirrorHandler.latest_frame)
+                        self.wfile.write(frame)
                         self.wfile.write(b"\r\n")
             except (ConnectionResetError, BrokenPipeError):
                 pass
@@ -289,17 +293,17 @@ class MirrorHandler(BaseHTTPRequestHandler):
         if self.path == "/api/frame":
             content_length = int(self.headers.get("Content-Length", 0))
             content_type = self.headers.get("Content-Type", "")
-            if content_type == "image/jpeg":
+            if "image/jpeg" in content_type:
                 MirrorHandler.latest_frame = self.rfile.read(content_length)
                 MirrorHandler.accepted = True
                 MirrorHandler.frame_event.set()
                 self.send_response(200)
                 self.end_headers()
             else:
-                body = self.rfile.read(content_length).decode("utf-8")
-                if "," in body:
-                    body = body.split(",", 1)[1]
                 try:
+                    body = self.rfile.read(content_length).decode("utf-8")
+                    if "," in body:
+                        body = body.split(",", 1)[1]
                     MirrorHandler.latest_frame = base64.b64decode(body)
                     MirrorHandler.accepted = True
                     MirrorHandler.frame_event.set()
