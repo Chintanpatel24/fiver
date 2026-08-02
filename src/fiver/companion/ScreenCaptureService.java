@@ -30,7 +30,62 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class ScreenCaptureService extends Service {
+class MyProjectionCallback extends MediaProjection.Callback {
+    private final Service service;
+    MyProjectionCallback(Service service) {
+        this.service = service;
+    }
+    @Override
+    public void onStop() {
+        service.stopSelf();
+    }
+}
+
+class SendFrameTask implements Runnable {
+    private final Bitmap bitmap;
+    private final String serverUrl;
+    private final AtomicBoolean isSending;
+
+    SendFrameTask(Bitmap bitmap, String serverUrl, AtomicBoolean isSending) {
+        this.bitmap = bitmap;
+        this.serverUrl = serverUrl;
+        this.isSending = isSending;
+    }
+
+    @Override
+    public void run() {
+        try {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 60, bos);
+            byte[] jpegBytes = bos.toByteArray();
+            
+            if (serverUrl != null && !serverUrl.isEmpty()) {
+                URL url = new URL(serverUrl + "/api/frame");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "image/jpeg");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(3000);
+                conn.setReadTimeout(3000);
+                
+                OutputStream os = conn.getOutputStream();
+                os.write(jpegBytes);
+                os.flush();
+                os.close();
+                
+                conn.getResponseCode();
+                conn.disconnect();
+            }
+        } catch (Exception e) {
+            // Silently ignore network errors to keep trying
+        } finally {
+            bitmap.recycle();
+            isSending.set(false);
+        }
+    }
+}
+
+public class ScreenCaptureService extends Service implements ImageReader.OnImageAvailableListener {
     private static final String CHANNEL_ID = "fiver_mirror";
     private static final int NOTIFICATION_ID = 1;
     
@@ -47,6 +102,9 @@ public class ScreenCaptureService extends Service {
     private AtomicBoolean isSending = new AtomicBoolean(false);
     private long lastFrameTime = 0;
     private static final long MIN_FRAME_INTERVAL_MS = 50; // Max ~20 FPS
+
+    private int finalWidth;
+    private int finalHeight;
 
     @Override
     public void onCreate() {
@@ -107,12 +165,7 @@ public class ScreenCaptureService extends Service {
         mediaProjection = projectionManager.getMediaProjection(resultCode, resultData);
         if (mediaProjection == null) return;
         
-        mediaProjection.registerCallback(new MediaProjection.Callback() {
-            @Override
-            public void onStop() {
-                stopSelf();
-            }
-        }, null);
+        mediaProjection.registerCallback(new MyProjectionCallback(this), null);
         
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         DisplayMetrics metrics = new DisplayMetrics();
@@ -129,6 +182,9 @@ public class ScreenCaptureService extends Service {
             height = (int) (height * scale);
         }
         
+        this.finalWidth = width;
+        this.finalHeight = height;
+        
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
         virtualDisplay = mediaProjection.createVirtualDisplay(
                 "FiverMirror",
@@ -138,95 +194,60 @@ public class ScreenCaptureService extends Service {
                 null, handler
         );
         
-        final int finalWidth = width;
-        final int finalHeight = height;
+        imageReader.setOnImageAvailableListener(this, handler);
+    }
+    
+    @Override
+    public void onImageAvailable(ImageReader reader) {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastFrameTime < MIN_FRAME_INTERVAL_MS) {
+            Image image = reader.acquireLatestImage();
+            if (image != null) image.close();
+            return;
+        }
         
-        imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
-            @Override
-            public void onImageAvailable(ImageReader reader) {
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastFrameTime < MIN_FRAME_INTERVAL_MS) {
-                    Image image = reader.acquireLatestImage();
-                    if (image != null) image.close();
-                    return;
-                }
-                
-                if (isSending.get()) {
-                    Image image = reader.acquireLatestImage();
-                    if (image != null) image.close();
-                    return;
-                }
-                
-                Image image = null;
-                try {
-                    image = reader.acquireLatestImage();
-                    if (image == null) return;
-                    
-                    lastFrameTime = currentTime;
-                    
-                    Image.Plane[] planes = image.getPlanes();
-                    ByteBuffer buffer = planes[0].getBuffer();
-                    int pixelStride = planes[0].getPixelStride();
-                    int rowStride = planes[0].getRowStride();
-                    int rowPadding = rowStride - pixelStride * finalWidth;
-                    
-                    int bitmapWidth = finalWidth + rowPadding / pixelStride;
-                    Bitmap bitmap = Bitmap.createBitmap(bitmapWidth, finalHeight, Bitmap.Config.ARGB_8888);
-                    bitmap.copyPixelsFromBuffer(buffer);
-                    
-                    Bitmap croppedBitmap = bitmap;
-                    if (bitmapWidth != finalWidth) {
-                        croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, finalWidth, finalHeight);
-                    }
-                    
-                    sendFrame(croppedBitmap);
-                    
-                } catch (Exception e) {
-                    e.printStackTrace();
-                } finally {
-                    if (image != null) {
-                        image.close();
-                    }
-                }
+        if (isSending.get()) {
+            Image image = reader.acquireLatestImage();
+            if (image != null) image.close();
+            return;
+        }
+        
+        Image image = null;
+        try {
+            image = reader.acquireLatestImage();
+            if (image == null) return;
+            
+            lastFrameTime = currentTime;
+            
+            Image.Plane[] planes = image.getPlanes();
+            ByteBuffer buffer = planes[0].getBuffer();
+            int pixelStride = planes[0].getPixelStride();
+            int rowStride = planes[0].getRowStride();
+            int rowPadding = rowStride - pixelStride * finalWidth;
+            
+            int bitmapWidth = finalWidth + rowPadding / pixelStride;
+            Bitmap bitmap = Bitmap.createBitmap(bitmapWidth, finalHeight, Bitmap.Config.ARGB_8888);
+            bitmap.copyPixelsFromBuffer(buffer);
+            
+            Bitmap croppedBitmap = bitmap;
+            if (bitmapWidth != finalWidth) {
+                croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, finalWidth, finalHeight);
             }
-        }, handler);
+            
+            sendFrame(croppedBitmap);
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (image != null) {
+                image.close();
+            }
+        }
     }
     
     private void sendFrame(final Bitmap bitmap) {
         isSending.set(true);
-        networkExecutor.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, bos);
-                    byte[] jpegBytes = bos.toByteArray();
-                    
-                    if (serverUrl != null && !serverUrl.isEmpty()) {
-                        URL url = new URL(serverUrl + "/api/frame");
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        conn.setRequestMethod("POST");
-                        conn.setRequestProperty("Content-Type", "image/jpeg");
-                        conn.setDoOutput(true);
-                        conn.setConnectTimeout(3000);
-                        conn.setReadTimeout(3000);
-                        
-                        OutputStream os = conn.getOutputStream();
-                        os.write(jpegBytes);
-                        os.flush();
-                        os.close();
-                        
-                        conn.getResponseCode();
-                        conn.disconnect();
-                    }
-                } catch (Exception e) {
-                    // Silently ignore network errors to keep trying
-                } finally {
-                    bitmap.recycle();
-                    isSending.set(false);
-                }
-            }
-        });
+        networkExecutor.execute(new SendFrameTask(bitmap, serverUrl, isSending));
     }
 
     @Override

@@ -15,7 +15,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements View.OnClickListener {
     private static final int REQUEST_CODE_SCREEN_CAPTURE = 1000;
     private static final int REQUEST_CODE_NOTIFICATIONS = 1001;
     
@@ -90,19 +90,17 @@ public class MainActivity extends Activity {
         
         setContentView(mainLayout);
         
-        startButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startScreenCapture();
-            }
-        });
-        
-        stopButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                stopScreenCapture();
-            }
-        });
+        startButton.setOnClickListener(this);
+        stopButton.setOnClickListener(this);
+    }
+    
+    @Override
+    public void onClick(View v) {
+        if (v == startButton) {
+            startScreenCapture();
+        } else if (v == stopButton) {
+            stopScreenCapture();
+        }
     }
     
     private void startScreenCapture() {
