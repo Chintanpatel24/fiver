@@ -47,10 +47,8 @@ def print_update_banner() -> None:
     try:
         has_update, latest_ver, _, _ = check_latest_release(timeout=1.5)
         if has_update:
-            print("┌────────────────────────────────────────────────────────────┐")
-            print(f"│  🚀 UPDATE AVAILABLE: fiver v{latest_ver:<29} │")
+            print(f"│   UPDATE AVAILABLE: fiver v{latest_ver:<29} │")
             print("│  Run 'fiver --update' to view release notes & install!     │")
-            print("└────────────────────────────────────────────────────────────┘\n")
     except Exception:
         pass
 
